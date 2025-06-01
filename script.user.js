@@ -2,7 +2,7 @@
 // @name         Smart Google Filter
 // @description  A Google Search Filter
 // @author       Ghost (https://github.com/Wandervogel-001)
-// @version      1.2
+// @version      1.4
 // @match        *://*.google.com/search*
 // @match        *://*.bing.com/search*
 // @match        *://*.duckduckgo.com/*
@@ -10,6 +10,8 @@
 // @match        *://*.brave.com/search*
 // @match        *://*.startpage.com/*
 // @match        *://*.qwant.com/*
+// @match        *://*.youtube.com/*
+
 // @grant        none
 // ==/UserScript==
 
@@ -17,12 +19,11 @@
     'use strict';
 
     // --- SETTINGS ---
-    const singleRedFlags = ["porn","nsfw", "cum","sexy", "fap", "lingerie", "bikini", "boobs", "butt", "ass", "legging", "panties", "panty", "pussy"];
+    const singleRedFlags = ["porn","nsfw", "cum","sexy", "fap", "lingerie", "bikini", "boobs", "butt", "ass", "legging", "panties", "panty", "pussy", "bitch"];
 
     const extraMultiFlags = ["hot", "pant", "provocative", "yoga", "tight", "erotic", "explicit", "woman", "gym", "girl", "body", "teas", "only", "fans", "feet", "pics", "leg", "jerk", "off", "cam",];
 
     const multiRedFlags = [...singleRedFlags, ...extraMultiFlags];
-
 
     const redCombos = [
         ["E", "girl"],
@@ -42,42 +43,179 @@
                              );
     };
 
-
     const containsSingleRedFlag = text => {
         const query = text.toLowerCase();
-
         // block if any flag is substring of query
         return singleRedFlags.some(flag => query.includes(flag.toLowerCase()));
     };
 
     // Count how many multiRedFlags are present in text
     const countMultiRedFlags = text => {
-        const words = getWords(text).map(stemWord);
-        const matchedFlags = new Set();
-
-        words.forEach(w => {
-            multiRedFlags.forEach(flag => {
-                if (stemWord(flag) === w) matchedFlags.add(w);
-            });
+        const query = text.toLowerCase();
+        let count = 0;
+        multiRedFlags.forEach(flag => {
+            if (query.includes(flag.toLowerCase())) count++;
         });
-
-        return matchedFlags.size;
+        return count;
     };
-    console.log(countMultiRedFlags("cat"))
 
-    const shouldBlockQuery = () => {
-        const query = new URLSearchParams(window.location.search).get("q")?.toLowerCase() || "";
+    const shouldBlockQuery = (query) => {
+        const searchQuery = query?.toLowerCase() || "";
 
         // Check single word flags first (block immediately)
-        if (containsSingleRedFlag(query)) return true;
+        if (containsSingleRedFlag(searchQuery)) return true;
 
         // Check if 2 or more multi flags present
-        if (countMultiRedFlags(query) >= 2) return true;
+        if (countMultiRedFlags(searchQuery) >= 2) return true;
 
         // Check combos
-        if (hasRedCombo(query)) return true;
+        if (hasRedCombo(searchQuery)) return true;
 
         return false;
+    };
+
+    // --- YOUTUBE SPECIFIC HANDLING ---
+    const handleYouTube = () => {
+        // Check if we're on YouTube
+        if (!window.location.hostname.includes('youtube.com')) return;
+
+        // Function to get YouTube search query
+        const getYouTubeQuery = () => {
+            // Check URL parameters for search query
+            const urlParams = new URLSearchParams(window.location.search);
+            const searchQuery = urlParams.get('search_query') || urlParams.get('q');
+
+            if (searchQuery) return searchQuery;
+
+            // Also check the search input field
+            const searchInput = document.querySelector('input#search') ||
+                  document.querySelector('input[name="search_query"]') ||
+                  document.querySelector('#search-input input');
+
+            return searchInput?.value || '';
+        };
+
+        // Function to redirect to YouTube home
+        const redirectToYouTubeHome = () => {
+            window.location.href = 'https://www.youtube.com/';
+        };
+
+        // Check current search query in URL
+        const currentQuery = getYouTubeQuery();
+        if (currentQuery && shouldBlockQuery(currentQuery)) {
+            redirectToYouTubeHome();
+            return;
+        }
+
+        // Monitor search input for real-time checking
+        const monitorSearchInput = () => {
+            const searchInput = document.querySelector('input#search') ||
+                  document.querySelector('input[name="search_query"]') ||
+                  document.querySelector('#search-input input');
+
+            if (searchInput && !searchInput.hasAttribute('data-filter-monitored')) {
+                searchInput.setAttribute('data-filter-monitored', 'true');
+
+                // Check on form submission
+                const searchForm = searchInput.closest('form');
+                if (searchForm) {
+                    searchForm.addEventListener('submit', (e) => {
+                        const query = searchInput.value;
+                        if (shouldBlockQuery(query)) {
+                            e.preventDefault();
+                            redirectToYouTubeHome();
+                        }
+                    });
+                }
+
+                // Also check on Enter key press
+                searchInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        const query = searchInput.value;
+                        if (shouldBlockQuery(query)) {
+                            e.preventDefault();
+                            redirectToYouTubeHome();
+                        }
+                    }
+                });
+            }
+        };
+
+        // Initial check
+        monitorSearchInput();
+
+        // Re-check when YouTube's SPA navigation occurs
+        const observer = new MutationObserver(() => {
+            monitorSearchInput();
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    };
+
+    // --- REGULAR SEARCH ENGINE HANDLING ---
+    const handleRegularSearchEngines = () => {
+        const query = new URLSearchParams(window.location.search).get("q");
+
+        if (shouldBlockQuery(query)) {
+            blockPage();
+            return;
+        }
+
+        // Content filtering for regular search engines
+        const isBlockedText = text => {
+            if (!text) return false;
+            return countMultiRedFlags(text) >= 2 || hasRedCombo(text);
+        };
+
+        const isBlockedSite = text => blockedSites.some(site => text.toLowerCase().includes(site));
+
+        const filterImages = (root = document) => {
+            const images = root.querySelectorAll('img');
+            images.forEach(img => {
+                const alt = img.alt || '';
+                const src = img.src || '';
+                const container = img.closest('a')?.parentElement?.innerText || '';
+
+                if (isBlockedText(alt) || isBlockedText(src) || isBlockedText(container) || isBlockedSite(container)) {
+                    const box = img.closest('div');
+                    if (box) box.style.display = 'none';
+                }
+            });
+        };
+
+        const filterLinks = (root = document) => {
+            const anchors = root.querySelectorAll('a');
+            anchors.forEach(link => {
+                const href = link.href || '';
+                const text = link.innerText || '';
+
+                if (isBlockedSite(href) || isBlockedSite(text) || isBlockedText(text)) {
+                    const parent = link.closest('div');
+                    if (parent) parent.style.display = 'none';
+                }
+            });
+        };
+
+        const filterAll = (root = document) => {
+            filterImages(root);
+            filterLinks(root);
+        };
+
+        // Initial run
+        filterAll();
+
+        // Observe dynamic content
+        const observer = new MutationObserver(mutations => {
+            for (const mutation of mutations) {
+                mutation.addedNodes.forEach(node => {
+                    if (node.nodeType === 1) filterAll(node);
+                });
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
     };
 
     const blockPage = () => {
@@ -162,7 +300,6 @@
             window.location.href = window.location.origin;
         };
 
-
         const toggleBtn = document.createElement("button");
         toggleBtn.textContent = "🌓 Toggle Theme";
         toggleBtn.onclick = () => {
@@ -177,9 +314,10 @@
         document.body.appendChild(title);
         document.body.appendChild(msg);
         document.body.appendChild(buttonContainer);
+
         (function() {
             const removeDuckDuckGoExtras = () => {
-                const keywords = ["feedback", "share feedback", "tell us", "report"]; // Add more if needed
+                const keywords = ["feedback", "share feedback", "tell us", "report"];
 
                 document.querySelectorAll('div, section, aside, footer').forEach(el => {
                     const text = el.textContent?.toLowerCase() || "";
@@ -194,68 +332,14 @@
             });
 
             observer.observe(document.body, { childList: true, subtree: true });
-
-            // Initial call
             removeDuckDuckGoExtras();
         })();
     };
 
-    // --- BLOCK QUERY ---
-    if (shouldBlockQuery()) {
-        blockPage();
-        return;
+    // --- MAIN EXECUTION ---
+    if (window.location.hostname.includes('youtube.com')) {
+        handleYouTube();
+    } else {
+        handleRegularSearchEngines();
     }
-
-    // --- CONTENT FILTERING ---
-    const isBlockedText = text => {
-        if (!text) return false;
-        return countMultiRedFlags(text) >= 2 || hasRedCombo(text);
-    };
-
-    const isBlockedSite = text => blockedSites.some(site => text.toLowerCase().includes(site));
-
-    const filterImages = (root = document) => {
-        const images = root.querySelectorAll('img');
-        images.forEach(img => {
-            const alt = img.alt || '';
-            const src = img.src || '';
-            const container = img.closest('a')?.parentElement?.innerText || '';
-
-            if (isBlockedText(alt) || isBlockedText(src) || isBlockedText(container) || isBlockedSite(container)) {
-                const box = img.closest('div');
-                if (box) box.style.display = 'none';
-            }
-        });
-    };
-
-    const filterLinks = (root = document) => {
-        const anchors = root.querySelectorAll('a');
-        anchors.forEach(link => {
-            const href = link.href || '';
-            const text = link.innerText || '';
-
-            if (isBlockedSite(href) || isBlockedSite(text) || isBlockedText(text)) {
-                const parent = link.closest('div');
-                if (parent) parent.style.display = 'none';
-            }
-        });
-    };
-
-    const filterAll = (root = document) => {
-        filterImages(root);
-        filterLinks(root);
-    };
-
-    // Initial run
-    filterAll();
-
-    // Observe dynamic content
-    const observer = new MutationObserver(mutations => {
-        for (const mutation of mutations) {
-            mutation.addedNodes.forEach(node => {
-                if (node.nodeType === 1) filterAll(node);
-            });
-        }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
 })();
