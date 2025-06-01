@@ -10,6 +10,7 @@
 // @match        *://*.brave.com/search*
 // @match        *://*.startpage.com/*
 // @match        *://*.qwant.com/*
+// @match        *://*.youtube.com/*
 
 // @grant        none
 // ==/UserScript==
@@ -29,7 +30,7 @@
         ["E", "girl"],
     ];
 
-    const blockedSites = ["pinterest", "instagram", "reddit", "youtube", "tiktok"];
+    const blockedSites = ["pinterest", "instagram", "reddit", "tiktok"];
 
     // --- HELPERS ---
     const stemWord = word => word.toLowerCase().replace(/(ing|ies|s|ed|ly|er|est|y)$/g, "");
@@ -160,7 +161,7 @@
         const backBtn = document.createElement("button");
         backBtn.textContent = "🔙 Back to Google";
         backBtn.onclick = () => {
-            window.location.href = "https://www.google.com";
+            window.location.href = window.location.origin;
         };
 
 
@@ -178,6 +179,27 @@
         document.body.appendChild(title);
         document.body.appendChild(msg);
         document.body.appendChild(buttonContainer);
+        (function() {
+            const removeDuckDuckGoExtras = () => {
+                const keywords = ["feedback", "share feedback", "tell us", "report"]; // Add more if needed
+
+                document.querySelectorAll('div, section, aside, footer').forEach(el => {
+                    const text = el.textContent?.toLowerCase() || "";
+                    if (keywords.some(k => text.includes(k))) {
+                        el.remove();
+                    }
+                });
+            };
+
+            const observer = new MutationObserver(() => {
+                removeDuckDuckGoExtras();
+            });
+
+            observer.observe(document.body, { childList: true, subtree: true });
+
+            // Initial call
+            removeDuckDuckGoExtras();
+        })();
     };
 
     // --- BLOCK QUERY ---
