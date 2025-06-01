@@ -1,70 +1,84 @@
 // ==UserScript==
 // @name         Smart Google Filter
-// @namespace    https://github.com/Wandervogel-001/google-smart-filter
-// @version      1.0
-// @description  Blocks distracting searches and images on Google
+// @description  A Google Search Filter
 // @author       Ghost (https://github.com/Wandervogel-001)
+// @version      1.2
 // @match        *://*.google.com/search*
+// @match        *://*.bing.com/search*
+// @match        *://*.duckduckgo.com/*
+// @match        *://*.yahoo.com/search*
+// @match        *://*.brave.com/search*
+// @match        *://*.startpage.com/*
+// @match        *://*.qwant.com/*
+
 // @grant        none
-// @license      MIT
 // ==/UserScript==
 
-(function () {
+(function() {
     'use strict';
 
     // --- SETTINGS ---
-    const redFlags = [
-        "lingerie", "bikini", "hot", "nsfw", "sexy", "provocative", "yoga",
-        "tight", "legging", "nude", "gym", "body", "woman", "ass",
-        "butt", "boobs", "erotic", "explicit", "fap", "porn", "cum"
-    ];
+    const singleRedFlags = ["porn","nsfw", "cum","sexy", "fap", "lingerie", "bikini", "boobs", "butt", "ass", "legging", "panties", "panty", "pussy"];
+
+    const extraMultiFlags = ["hot", "pant", "provocative", "yoga", "tight", "erotic", "explicit", "woman", "gym", "girl", "body", "teas", "only", "fans", "feet", "pics", "leg", "jerk", "off", "cam",];
+
+    const multiRedFlags = [...singleRedFlags, ...extraMultiFlags];
+
 
     const redCombos = [
-        ["jerk", "off"],
         ["E", "girl"],
-        ["cam", "girl"],
-        ["only", "fans"],
-        ["feet", "pics"]
     ];
 
     const blockedSites = ["pinterest", "instagram", "reddit", "youtube", "tiktok"];
-    const exceptionKeywords = ["men", "formal", "suit", "trouser", "jeans"];
 
     // --- HELPERS ---
     const stemWord = word => word.toLowerCase().replace(/(ing|ies|s|ed|ly|er|est|y)$/g, "");
 
     const getWords = text => text.toLowerCase().split(/[^a-zA-Z0-9]+/).filter(Boolean);
 
-    const hasRedFlag = text => {
-        const words = getWords(text);
-        return words.some(w => redFlags.some(flag => stemWord(w) === stemWord(flag)));
-    };
-
     const hasRedCombo = text => {
-        const words = getWords(text).map(stemWord);
+        const lowerText = text.toLowerCase();
         return redCombos.some(combo =>
-                              combo.every(term => words.includes(stemWord(term)))
+                              combo.every(term => lowerText.includes(term.toLowerCase()))
                              );
     };
 
 
-    const hasException = text => {
-        const words = getWords(text);
-        return words.some(w => exceptionKeywords.some(ex => stemWord(w).includes(stemWord(ex))));
+    const containsSingleRedFlag = text => {
+        const query = text.toLowerCase();
+
+        // block if any flag is substring of query
+        return singleRedFlags.some(flag => query.includes(flag.toLowerCase()));
     };
+
+    // Count how many multiRedFlags are present in text
+    const countMultiRedFlags = text => {
+        const words = getWords(text).map(stemWord);
+        const matchedFlags = new Set();
+
+        words.forEach(w => {
+            multiRedFlags.forEach(flag => {
+                if (stemWord(flag) === w) matchedFlags.add(w);
+            });
+        });
+
+        return matchedFlags.size;
+    };
+    console.log(countMultiRedFlags("cat"))
 
     const shouldBlockQuery = () => {
         const query = new URLSearchParams(window.location.search).get("q")?.toLowerCase() || "";
-        const flatQuery = query.replace(/[^a-zA-Z0-9]/g, "");
-        const queryWords = query.split(/\s+/).map(stemWord);
 
-        const containsRedFlag = redFlags.some(flag => flatQuery.includes(stemWord(flag)));
-        const containsOnlyExceptions = queryWords.every(q =>
-                                                        exceptionKeywords.some(ex => q.includes(stemWord(ex)))
-                                                       );
+        // Check single word flags first (block immediately)
+        if (containsSingleRedFlag(query)) return true;
 
-        const containsCombo = hasRedCombo(query);
-        return (containsRedFlag || containsCombo) && !containsOnlyExceptions;
+        // Check if 2 or more multi flags present
+        if (countMultiRedFlags(query) >= 2) return true;
+
+        // Check combos
+        if (hasRedCombo(query)) return true;
+
+        return false;
     };
 
     const blockPage = () => {
@@ -74,77 +88,66 @@
         const savedTheme = localStorage.getItem("theme") || "dark";
         const theme = savedTheme === "light" ? "light" : "dark";
 
-        // Apply styles
         const style = document.createElement("style");
         style.textContent = `
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: 'Segoe UI', sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            text-align: center;
-            transition: background 0.3s, color 0.3s;
-        }
-
-        body.dark {
-            background: #2b2d31;
-            color: #f2f3f5;
-        }
-
-        body.light {
-            background: #f4f4f4;
-            color: #1e1e1e;
-        }
-
-        h1 {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-        }
-
-        p {
-            font-size: 1.2rem;
-            opacity: 0.8;
-        }
-
-        .buttons {
-            margin-top: 2rem;
-            display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
-        }
-
-        button {
-            padding: 10px 20px;
-            background: #5865f2;
-            border: none;
-            border-radius: 6px;
-            color: white;
-            cursor: pointer;
-            font-size: 1rem;
-            transition: background 0.2s;
-        }
-
-        button:hover {
-            background: #4752c4;
-        }
-
-        body.light button {
-            background: #1e1e1e;
-            color: #fff;
-        }
-
-        body.light button:hover {
-            background: #444;
-        }
-    `;
+            body {
+                margin: 0;
+                padding: 0;
+                font-family: 'Segoe UI', sans-serif;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                text-align: center;
+                transition: background 0.3s, color 0.3s;
+            }
+            body.dark {
+                background: #2b2d31;
+                color: #f2f3f5;
+            }
+            body.light {
+                background: #f4f4f4;
+                color: #1e1e1e;
+            }
+            h1 {
+                font-size: 3rem;
+                margin-bottom: 1rem;
+            }
+            p {
+                font-size: 1.2rem;
+                opacity: 0.8;
+            }
+            .buttons {
+                margin-top: 2rem;
+                display: flex;
+                gap: 1rem;
+                flex-wrap: wrap;
+            }
+            button {
+                padding: 10px 20px;
+                background: #5865f2;
+                border: none;
+                border-radius: 6px;
+                color: white;
+                cursor: pointer;
+                font-size: 1rem;
+                transition: background 0.2s;
+            }
+            button:hover {
+                background: #4752c4;
+            }
+            body.light button {
+                background: #1e1e1e;
+                color: #fff;
+            }
+            body.light button:hover {
+                background: #444;
+            }
+        `;
         document.head.appendChild(style);
         document.body.className = theme;
 
-        // Build page elements
         const title = document.createElement("h1");
         title.textContent = "⛔ Blocked";
 
@@ -156,7 +159,10 @@
 
         const backBtn = document.createElement("button");
         backBtn.textContent = "🔙 Back to Google";
-        backBtn.onclick = () => window.location.href = "https://www.google.com";
+        backBtn.onclick = () => {
+            window.location.href = "https://www.google.com";
+        };
+
 
         const toggleBtn = document.createElement("button");
         toggleBtn.textContent = "🌓 Toggle Theme";
@@ -167,15 +173,12 @@
             localStorage.setItem("theme", newTheme);
         };
 
-        // Append all elements
         buttonContainer.appendChild(backBtn);
         buttonContainer.appendChild(toggleBtn);
         document.body.appendChild(title);
         document.body.appendChild(msg);
         document.body.appendChild(buttonContainer);
     };
-
-
 
     // --- BLOCK QUERY ---
     if (shouldBlockQuery()) {
@@ -185,8 +188,8 @@
 
     // --- CONTENT FILTERING ---
     const isBlockedText = text => {
-        const words = getWords(text);
-        return words.some(w => redFlags.some(flag => stemWord(w) === stemWord(flag)));
+        if (!text) return false;
+        return countMultiRedFlags(text) >= 2 || hasRedCombo(text);
     };
 
     const isBlockedSite = text => blockedSites.some(site => text.toLowerCase().includes(site));
@@ -194,9 +197,9 @@
     const filterImages = (root = document) => {
         const images = root.querySelectorAll('img');
         images.forEach(img => {
-            const alt = img.alt?.toLowerCase() || '';
-            const src = img.src?.toLowerCase() || '';
-            const container = img.closest('a')?.parentElement?.innerText.toLowerCase() || '';
+            const alt = img.alt || '';
+            const src = img.src || '';
+            const container = img.closest('a')?.parentElement?.innerText || '';
 
             if (isBlockedText(alt) || isBlockedText(src) || isBlockedText(container) || isBlockedSite(container)) {
                 const box = img.closest('div');
@@ -208,8 +211,8 @@
     const filterLinks = (root = document) => {
         const anchors = root.querySelectorAll('a');
         anchors.forEach(link => {
-            const href = link.href?.toLowerCase() || '';
-            const text = link.innerText?.toLowerCase() || '';
+            const href = link.href || '';
+            const text = link.innerText || '';
 
             if (isBlockedSite(href) || isBlockedSite(text) || isBlockedText(text)) {
                 const parent = link.closest('div');
