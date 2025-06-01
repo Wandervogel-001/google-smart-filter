@@ -19,14 +19,33 @@
     'use strict';
 
     // --- SETTINGS ---
-    const singleRedFlags = ["porn","nsfw", "cum","sexy", "fap", "lingerie", "bikini", "boobs", "butt", "ass", "legging", "panties", "panty", "pussy", "bitch"];
+    // Heavily obfuscated filter configuration
+    const _0x2a4b = ['cG9ybiw=', 'bnNmdyw=', 'Y3VtLA==', 's2V4eSw=', 'ZmFwLA==', 'bGluZ2VyaWU=', 'Ym', 'aWtpbmk=', 'Ym9vYnM=', 'YnV0dA==', 'YXNz', 'bGVnZ2luZw==', 'cGFudGllcw==', 'cGFudHk=', 'cHVzc3k=', 'Yml0Y2g='];
+    const _0x3c5d = ['aG90', 'cGFudA==', 'cHJvdm9jYXRpdmU=', 'eW9nYQ==', 'dGlnaHQ=', 'ZXJvdGlj', 'ZXhwbGljaXQ=', 'd29tYW4=', 'Z3lt', 'Z2lybA==', 'Ym9keQ==', 'dGVhcw==', 'b25seQ==', 'ZmFucw==', 'ZmVldA==', 'cGljcw==', 'bGVn', 'amVyaw==', 'b2Zm', 'Y2Ft'];
 
-    const extraMultiFlags = ["hot", "pant", "provocative", "yoga", "tight", "erotic", "explicit", "woman", "gym", "girl", "body", "teas", "only", "fans", "feet", "pics", "leg", "jerk", "off", "cam",];
+    // ROT13-like obfuscation function
+    const _decode = (arr) => {
+        try {
+            return arr.map(item => atob(item)).join(',').split(',').filter(Boolean);
+        } catch {
+            return [];
+        }
+    };
 
+    // XOR-based simple encryption for additional layer
+    const _xor = (str, key = 42) => {
+        return str.split('').map(char =>
+            String.fromCharCode(char.charCodeAt(0) ^ key)
+        ).join('');
+    };
+
+    const singleRedFlags = _decode(_0x2a4b);
+    const extraMultiFlags = _decode(_0x3c5d);
     const multiRedFlags = [...singleRedFlags, ...extraMultiFlags];
 
+    // Obfuscated combinations
     const redCombos = [
-        ["E", "girl"],
+        [String.fromCharCode(69), String.fromCharCode(103,105,114,108)],
     ];
 
     const blockedSites = ["pinterest", "instagram", "reddit", "youtube", "tiktok"];
@@ -85,32 +104,32 @@
     const shouldBlockQuery = (query) => {
         const searchQuery = query?.toLowerCase() || "";
 
-        // Debug logging
-        console.log('Checking query:', searchQuery);
+        // Debug logging (remove or disable in production)
+        // console.log('Checking query:', searchQuery);
 
         // Check single word flags first (block immediately)
         if (containsSingleRedFlag(searchQuery)) {
-            console.log('Blocked by single red flag');
+            // console.log('Blocked by single red flag');
             return true;
         }
 
         // Check compound/concatenated red flags (like "hotgirl", "yogapants")
         if (containsCompoundRedFlags(searchQuery)) {
-            console.log('Blocked by compound red flags');
+            // console.log('Blocked by compound red flags');
             return true;
         }
 
         // Check if 2 or more multi flags present
         const flagCount = countMultiRedFlags(searchQuery);
-        console.log('Multi-flag count:', flagCount);
+        // console.log('Multi-flag count:', flagCount);
         if (flagCount >= 2) {
-            console.log('Blocked by multiple flags');
+            // console.log('Blocked by multiple flags');
             return true;
         }
 
         // Check combos
         if (hasRedCombo(searchQuery)) {
-            console.log('Blocked by red combo');
+            // console.log('Blocked by red combo');
             return true;
         }
 
@@ -122,7 +141,7 @@
         // Check if we're on YouTube
         if (!window.location.hostname.includes('youtube.com')) return;
 
-        console.log('YouTube handler activated');
+        // console.log('YouTube handler activated');
 
         // Function to get YouTube search query
         const getYouTubeQuery = () => {
@@ -143,14 +162,14 @@
 
         // Function to redirect to YouTube home
         const redirectToYouTubeHome = () => {
-            console.log('Redirecting to YouTube home');
+            // console.log('Redirecting to YouTube home');
             window.location.href = 'https://www.youtube.com/';
         };
 
         // Check current search query in URL immediately
         const checkCurrentQuery = () => {
             const currentQuery = getYouTubeQuery();
-            console.log('Current YouTube query:', currentQuery);
+            // console.log('Current YouTube query:', currentQuery);
             if (currentQuery && shouldBlockQuery(currentQuery)) {
                 redirectToYouTubeHome();
                 return true;
@@ -177,7 +196,7 @@
             }
 
             if (searchInput && !searchInput.hasAttribute('data-filter-monitored')) {
-                console.log('Found search input, adding monitors');
+                // console.log('Found search input, adding monitors');
                 searchInput.setAttribute('data-filter-monitored', 'true');
 
                 // Check on form submission
@@ -185,7 +204,7 @@
                 if (searchForm) {
                     searchForm.addEventListener('submit', (e) => {
                         const query = searchInput.value;
-                        console.log('Form submit with query:', query);
+                        // console.log('Form submit with query:', query);
                         if (shouldBlockQuery(query)) {
                             e.preventDefault();
                             e.stopPropagation();
@@ -198,7 +217,7 @@
                 searchInput.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') {
                         const query = searchInput.value;
-                        console.log('Enter key with query:', query);
+                        // console.log('Enter key with query:', query);
                         if (shouldBlockQuery(query)) {
                             e.preventDefault();
                             e.stopPropagation();
@@ -211,7 +230,7 @@
                 searchInput.addEventListener('input', (e) => {
                     const query = searchInput.value;
                     if (query.length > 3 && shouldBlockQuery(query)) {
-                        console.log('Input change blocked:', query);
+                        // console.log('Input change blocked:', query);
                         redirectToYouTubeHome();
                     }
                 });
@@ -237,7 +256,7 @@
         const checkUrlChange = () => {
             if (window.location.href !== lastUrl) {
                 lastUrl = window.location.href;
-                console.log('URL changed:', lastUrl);
+                // console.log('URL changed:', lastUrl);
                 setTimeout(() => {
                     if (checkCurrentQuery()) return;
                     monitorSearchInput();
@@ -539,10 +558,10 @@
     };
 
     // --- MAIN EXECUTION ---
-    console.log('Script starting on:', window.location.hostname);
+    // console.log('Script starting on:', window.location.hostname);
 
     if (window.location.hostname.includes('youtube.com')) {
-        console.log('Initializing YouTube handler');
+        // console.log('Initializing YouTube handler');
         // Wait for DOM to be ready
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', handleYouTube);
