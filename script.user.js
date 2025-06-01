@@ -10,8 +10,6 @@
 // @match        *://*.brave.com/search*
 // @match        *://*.startpage.com/*
 // @match        *://*.qwant.com/*
-// @match        *://*.youtube.com/*
-
 // @grant        none
 // ==/UserScript==
 
@@ -30,7 +28,7 @@
         ["E", "girl"],
     ];
 
-    const blockedSites = ["pinterest", "instagram", "reddit", "tiktok"];
+    const blockedSites = ["pinterest", "instagram", "reddit", "youtube", "tiktok"];
 
     // --- HELPERS ---
     const stemWord = word => word.toLowerCase().replace(/(ing|ies|s|ed|ly|er|est|y)$/g, "");
