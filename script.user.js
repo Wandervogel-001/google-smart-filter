@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Smart Google Filter
+// @name         Google Filter
 // @description  A Google Search Filter
 // @author       Ghost (https://github.com/Wandervogel-001)
-// @version      1.6
+// @version      1.0
 // @match        *://*.google.com/search*
 // @match        *://*.bing.com/search*
 // @match        *://*.duckduckgo.com/*
@@ -18,331 +18,435 @@
 (function() {
     'use strict';
 
-    // --- SETTINGS ---
-    // Heavily obfuscated filter configuration
-    const _0x2a4b = ['cG9ybiw=', 'bnNmdyw=', 'Y3VtLA==', 's2V4eSw=', 'ZmFwLA==', 'bGluZ2VyaWU=', 'Ym', 'aWtpbmk=', 'Ym9vYnM=', 'YnV0dA==', 'YXNz', 'bGVnZ2luZw==', 'cGFudGllcw==', 'cGFudHk=', 'cHVzc3k=', 'Yml0Y2g='];
-    const _0x3c5d = ['aG90', 'cGFudA==', 'cHJvdm9jYXRpdmU=', 'eW9nYQ==', 'dGlnaHQ=', 'ZXJvdGlj', 'ZXhwbGljaXQ=', 'd29tYW4=', 'Z3lt', 'Z2lybA==', 'Ym9keQ==', 'dGVhcw==', 'b25seQ==', 'ZmFucw==', 'ZmVldA==', 'cGljcw==', 'bGVn', 'amVyaw==', 'b2Zm', 'Y2Ft'];
+    // --- FAST CONFIGURATION ---
+    const filterConfig = {
+        // Precompiled high-priority words for instant blocking
+        criticalWords: new Set([
+            'sex', 'porn', 'nude', 'naked', 'fuck', 'shit', 'ass', 'bitch',
+            'cock', 'dick', 'pussy', 'vagina', 'boobs', 'tits', 'cum', 'orgasm',
+            'masturbat', 'xxx', 'adult', '18+', 'nsfw', 'r18', 'hentai', 'milf',
+            'onlyfans', 'hooker', 'escort', 'slut', 'whore', 'penis', 'anal',
+            'oral', 'blow', 'handjob', 'fetish', 'kink', 'bondage', 'dildo',
+            'vibrator', 'threesome', 'gangbang', 'creampie', 'gay',
+            'lesbian', 'homo', 'butt',
+        ]),
 
-    // ROT13-like obfuscation function
-    const _decode = (arr) => {
-        try {
-            return arr.map(item => atob(item)).join(',').split(',').filter(Boolean);
-        } catch {
-            return [];
+        // Fast regex patterns for immediate detection
+        fastPatterns: [
+            /\b(sex|porn|nude|naked|fuck|shit|ass|bitch|cock|dick|pussy|vagina|boobs|tits|cum|orgasm|masturbat)\w*\b/i,
+            /\b(xxx|adult|18\+|nsfw|r18|hentai|milf|onlyfans)\b/i,
+            /(hot|sexy|nude|naked|porn|adult|yoga)\s*(jean|pant|girl|boy|woman|man|body|pic|photo|image|video|content)/i,
+            /\b(breasts?|butt|ass|thighs?|boobs?|tits?)\b.*\b(pic|photo|image|video|show|exposed?)\b/i
+        ],
+
+        // Ordered profanity lists - will be searched in this order
+        profanityApiUrls: {
+            vulgarwords: 'https://raw.githubusercontent.com/Wandervogel-001/google-smart-filter/refs/heads/main/filtered_sensible.txt',
+        },
+
+        cacheTTL: 300000, // 5 minutes
+        maxCacheSize: 500,
+        searchTimeout: 2000 // 2 seconds timeout for progressive search
+    };
+
+    // --- OPTIMIZED CACHE ---
+    class FastCache {
+        constructor(ttl = filterConfig.cacheTTL, maxSize = filterConfig.maxCacheSize) {
+            this.data = new Map();
+            this.ttl = ttl;
+            this.maxSize = maxSize;
         }
-    };
 
-    // XOR-based simple encryption for additional layer
-    const _xor = (str, key = 42) => {
-        return str.split('').map(char =>
-            String.fromCharCode(char.charCodeAt(0) ^ key)
-        ).join('');
-    };
+        get(key) {
+            const entry = this.data.get(key);
+            if (entry && (Date.now() - entry.timestamp < this.ttl)) {
+                return entry.value;
+            }
+            this.data.delete(key);
+            return null;
+        }
 
-    const singleRedFlags = _decode(_0x2a4b);
-    const extraMultiFlags = _decode(_0x3c5d);
-    const multiRedFlags = [...singleRedFlags, ...extraMultiFlags];
+        set(key, value) {
+            if (this.data.size >= this.maxSize) {
+                const firstKey = this.data.keys().next().value;
+                this.data.delete(firstKey);
+            }
 
-    // Obfuscated combinations
-    const redCombos = [
-        [String.fromCharCode(69), String.fromCharCode(103,105,114,108)],
-    ];
-
-    const blockedSites = ["pinterest", "instagram", "reddit", "youtube", "tiktok"];
-
-    // --- HELPERS ---
-    const stemWord = word => word.toLowerCase().replace(/(ing|ies|s|ed|ly|er|est|y)$/g, "");
-
-    const getWords = text => text.toLowerCase().split(/[^a-zA-Z0-9]+/).filter(Boolean);
-
-    const hasRedCombo = text => {
-        const lowerText = text.toLowerCase();
-        return redCombos.some(combo =>
-                              combo.every(term => lowerText.includes(term.toLowerCase()))
-                             );
-    };
-
-    const containsSingleRedFlag = text => {
-        const query = text.toLowerCase();
-        return singleRedFlags.some(flag => {
-            const regex = new RegExp(`\\b${flag}\\b`, 'i');
-            return regex.test(query);
-        });
-    };
-
-    // Enhanced function to detect compound words and concatenated terms
-    const containsCompoundRedFlags = text => {
-        const query = text.toLowerCase().replace(/[^a-zA-Z0-9]/g, ''); // Remove spaces and special chars
-
-        // Check if query contains compound words with red flags
-        const compoundPatterns = [];
-
-        // Generate patterns for multiRedFlags combined together
-        multiRedFlags.forEach(flag1 => {
-            multiRedFlags.forEach(flag2 => {
-                if (flag1 !== flag2) {
-                    compoundPatterns.push(flag1 + flag2);
-                    compoundPatterns.push(flag2 + flag1);
-                }
+            this.data.set(key, {
+                value,
+                timestamp: Date.now()
             });
-        });
+        }
 
-        // Check if any compound pattern exists in the query
-        return compoundPatterns.some(pattern => query.includes(pattern));
+        clear() {
+            this.data.clear();
+        }
+    }
+
+    const cache = new FastCache();
+
+    // --- ENHANCED PROFANITY DATABASE WITH PROGRESSIVE SEARCH ---
+    class ProgressiveProfanityDatabase {
+        constructor() {
+            this.wordSets = new Map(); // Individual loaded sets
+            this.loadedSources = new Set(); // Track which sources are loaded
+            this.loadingPromises = new Map(); // Track ongoing loads
+            this.criticalWords = new Set([...filterConfig.criticalWords]);
+
+            console.log(`Initialized with ${this.criticalWords.size} critical words`);
+        }
+
+        // Check if word exists in critical words (instant)
+        containsCritical(word) {
+            return this.criticalWords.has(word.toLowerCase().trim());
+        }
+
+        // Check if word exists in already loaded sets
+        containsInLoaded(word) {
+            const normalized = word.toLowerCase().trim();
+            for (const [sourceName, wordSet] of this.wordSets) {
+                if (wordSet.has(normalized)) {
+                    console.log(`Word "${word}" found in ${sourceName}`);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Progressive search through profanity lists
+        async searchProgressively(word) {
+            const normalized = word.toLowerCase().trim();
+
+            // First check already loaded sets
+            if (this.containsInLoaded(normalized)) {
+                return true;
+            }
+
+            // Then search through unloaded sources one by one
+            const unloadedSources = Object.entries(filterConfig.profanityApiUrls)
+                .filter(([name]) => !this.loadedSources.has(name));
+
+            console.log(`Starting progressive search for "${word}" through ${unloadedSources.length} sources`);
+
+            for (const [sourceName, url] of unloadedSources) {
+                try {
+                    // Check if we're already loading this source
+                    if (!this.loadingPromises.has(sourceName)) {
+                        this.loadingPromises.set(sourceName, this.loadSingleSource(sourceName, url));
+                    }
+
+                    // Wait for this source to load
+                    const wordSet = await this.loadingPromises.get(sourceName);
+
+                    if (wordSet && wordSet.has(normalized)) {
+                        console.log(`Word "${word}" found in ${sourceName} during progressive search`);
+                        return true;
+                    }
+
+                } catch (error) {
+                    console.warn(`Failed to load ${sourceName} during progressive search:`, error);
+                    continue; // Continue to next source
+                }
+            }
+
+            console.log(`Word "${word}" not found in any profanity lists`);
+            return false;
+        }
+
+        // 1. Add GitHub API methods to the ProgressiveProfanityDatabase class
+        // Insert these methods inside the ProgressiveProfanityDatabase class:
+
+        // GitHub API method to fetch file content
+        async fetchGitHubFile(owner, repo, filePath, branch = 'main') {
+            const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`;
+
+            try {
+                console.log(`[DEBUG] Fetching from GitHub API: ${apiUrl}`);
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), filterConfig.searchTimeout);
+
+                const response = await fetch(apiUrl, {
+                    signal: controller.signal,
+                    cache: 'force-cache'
+                });
+
+                clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                // GitHub API returns content as base64 encoded
+                const content = atob(data.content.replace(/\s/g, '')); // Remove whitespace before decoding
+
+                console.log(`[DEBUG] Successfully fetched ${content.length} characters from ${filePath}`);
+
+                return content;
+
+            } catch (error) {
+                console.error(`[ERROR] Failed to fetch ${filePath}:`, error);
+                throw error;
+            }
+        }
+
+        // Load word list from GitHub
+        async loadWordListFromGitHub() {
+            const owner = 'Wandervogel-001';
+            const repo = 'google-smart-filter';
+            const filePath = 'filtered_sensible.txt';
+            const branch = 'main';
+
+            try {
+                const content = await this.fetchGitHubFile(owner, repo, filePath, branch);
+
+                // Split by lines and preserve complete phrases
+                const lines = content
+                    .split('\n')
+                    .map(line => line.trim().toLowerCase()) // Normalize but keep complete phrases
+                    .filter(line => line.length > 0);
+
+                console.log(`[DEBUG] Loaded ${lines.length} phrases/words from GitHub word list`);
+
+                return new Set(lines);
+
+            } catch (error) {
+                console.error('[ERROR] Failed to load word list from GitHub:', error);
+                return new Set(); // Return empty set on failure
+            }
+        }
+
+
+        // 2. Modify the loadSingleSource method to handle GitHub sources
+        // Replace the existing loadSingleSource method with this updated version:
+
+        async loadSingleSource(sourceName, url) {
+            try {
+                console.log(`Loading profanity list: ${sourceName}`);
+
+                let wordSet;
+
+                // Check if this is a GitHub source that should use API
+                if (url.includes('github.com') && url.includes('Wandervogel-001/google-smart-filter')) {
+                    // Use GitHub API for our specific repository
+                    wordSet = await this.loadWordListFromGitHub();
+                } else {
+                    // Use regular fetch for other sources
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), filterConfig.searchTimeout);
+
+                    const response = await fetch(url, {
+                        signal: controller.signal,
+                        cache: 'force-cache'
+                    });
+
+                    clearTimeout(timeoutId);
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const data = await response.text();
+                    let words = [];
+
+                    // Handle different formats
+                    try {
+                        const json = JSON.parse(data);
+                        words = Array.isArray(json) ? json : Object.keys(json);
+                    } catch {
+                        // It's a text file, split by lines
+                        words = data.split('\n')
+                            .map(line => line.trim().toLowerCase())
+                            .filter(line => line.length > 0);
+                    }
+
+                    // Create wordSet from the processed words (no double processing)
+                    wordSet = new Set(words);
+                }
+
+                // Store the loaded set
+                this.wordSets.set(sourceName, wordSet);
+                this.loadedSources.add(sourceName);
+
+                console.log(`Loaded ${wordSet.size} words from ${sourceName}`);
+
+                return wordSet;
+
+            } catch (error) {
+                console.warn(`Failed to load ${sourceName}:`, error);
+                this.loadedSources.add(sourceName); // Mark as attempted
+                return new Set(); // Return empty set to continue
+            }
+        }
+
+        // Get statistics
+        getStats() {
+            const totalLoaded = Array.from(this.wordSets.values())
+                .reduce((total, set) => total + set.size, 0);
+
+            return {
+                criticalWords: this.criticalWords.size,
+                loadedSources: this.loadedSources.size,
+                totalSources: Object.keys(filterConfig.profanityApiUrls).length,
+                totalLoadedWords: totalLoaded
+            };
+        }
+    }
+
+    const profanityDB = new ProgressiveProfanityDatabase();
+
+    // --- TEXT NORMALIZATION ---
+    const fastNormalize = (text) => {
+        if (!text) return '';
+
+        const cacheKey = 'norm_' + text.substring(0, 50);
+        const cached = cache.get(cacheKey);
+        if (cached) return cached;
+
+        let normalized = text.toLowerCase()
+            .replace(/[0@]/g, 'o')
+            .replace(/[1!]/g, 'i')
+            .replace(/[3]/g, 'e')
+            .replace(/[4]/g, 'a')
+            .replace(/[5$]/g, 's')
+            // Modified: preserve + symbol and other important characters
+            .replace(/[^\w\s+]/g, ' ')  // Keep + symbol
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        cache.set(cacheKey, normalized);
+        return normalized;
     };
 
-    const countMultiRedFlags = text => {
-        const query = text.toLowerCase();
-        let count = 0;
-        multiRedFlags.forEach(flag => {
-            const regex = new RegExp(`\\b${flag}\\b`, 'i');
-            if (regex.test(query)) count++;
-        });
-        return count;
-    };
+    // --- PROGRESSIVE PROFANITY DETECTION ---
+    const containsProfanity = async (text) => {
+        if (!text) return false;
 
-    const shouldBlockQuery = (query) => {
-        const searchQuery = query?.toLowerCase() || "";
+        const normalized = fastNormalize(text);
+        const cacheKey = 'prof_' + normalized.substring(0, 30);
+        const cached = cache.get(cacheKey);
+        if (cached !== null) {
+            console.log(`Cache hit for "${text}": ${cached}`);
+            return cached;
+        }
 
-        // Debug logging (remove or disable in production)
-        // console.log('Checking query:', searchQuery);
+        console.log(`Checking profanity for: "${text}"`);
 
-        // Check single word flags first (block immediately)
-        if (containsSingleRedFlag(searchQuery)) {
-            // console.log('Blocked by single red flag');
+        // PHASE 1: INSTANT checks (critical words and patterns)
+        console.log('Phase 1: Checking critical words and patterns...');
+
+        // Check original text first (before normalization) - CRITICAL FIX
+        const originalLower = text.toLowerCase().trim();
+        console.log(`Checking original text: "${originalLower}"`);
+
+        if (filterConfig.criticalWords.has(originalLower)) {
+            console.log(`✅ BLOCKED by critical word (original): ${originalLower}`);
+            cache.set(cacheKey, true);
+            console.log(`✅ RETURNING TRUE for: ${text}`);
             return true;
         }
 
-        // Check compound/concatenated red flags (like "hotgirl", "yogapants")
-        if (containsCompoundRedFlags(searchQuery)) {
-            // console.log('Blocked by compound red flags');
-            return true;
+        // Fast regex patterns
+        for (const pattern of filterConfig.fastPatterns) {
+            if (pattern.test(text) || pattern.test(normalized)) {
+                console.log('✅ BLOCKED by fast regex pattern');
+                cache.set(cacheKey, true);
+                console.log(`✅ RETURNING TRUE for: ${text}`);
+                return true;
+            }
         }
 
-        // Check if 2 or more multi flags present
-        const flagCount = countMultiRedFlags(searchQuery);
-        // console.log('Multi-flag count:', flagCount);
-        if (flagCount >= 2) {
-            // console.log('Blocked by multiple flags');
-            return true;
+        // Critical word check (individual words from normalized text)
+        const words = normalized.split(/\s+/);
+        console.log(`Checking normalized words: [${words.join(', ')}]`);
+
+        for (const word of words) {
+            if (word.length >= 3 && profanityDB.containsCritical(word)) {
+                console.log(`✅ BLOCKED by critical word (normalized): ${word}`);
+                cache.set(cacheKey, true);
+                console.log(`✅ RETURNING TRUE for: ${text}`);
+                return true;
+            }
         }
 
-        // Check combos
-        if (hasRedCombo(searchQuery)) {
-            // console.log('Blocked by red combo');
-            return true;
+        console.log('Phase 1 passed - no critical words or patterns found');
+
+        // PHASE 2: PROGRESSIVE SEARCH through profanity lists
+        console.log('Phase 2: Starting progressive search...');
+
+        // First check the complete normalized text as a phrase
+        try {
+            const foundAsPhrase = await profanityDB.searchProgressively(normalized);
+            if (foundAsPhrase) {
+                console.log(`✅ BLOCKED by progressive search (complete phrase): ${normalized}`);
+                cache.set(cacheKey, true);
+                console.log(`✅ RETURNING TRUE for: ${text}`);
+                return true;
+            }
+        } catch (error) {
+            console.warn(`Progressive search failed for complete phrase "${normalized}":`, error);
         }
 
+        // Then check individual words
+        for (const word of words) {
+            if (word.length >= 3) { // Only check meaningful words
+                try {
+                    const found = await profanityDB.searchProgressively(word);
+                    if (found) {
+                        console.log(`✅ BLOCKED by progressive search (individual word): ${word}`);
+                        cache.set(cacheKey, true);
+                        console.log(`✅ RETURNING TRUE for: ${text}`);
+                        return true;
+                    }
+                } catch (error) {
+                    console.warn(`Progressive search failed for "${word}":`, error);
+                    // Continue checking other words
+                }
+            }
+        }
+
+        console.log('Phase 2 completed - phrase and words not found in any profanity lists');
+        console.log(`❌ RETURNING FALSE for: ${text}`);
+        cache.set(cacheKey, false);
         return false;
     };
 
-    // --- YOUTUBE SPECIFIC HANDLING ---
-    const handleYouTube = () => {
-        // Check if we're on YouTube
-        if (!window.location.hostname.includes('youtube.com')) return;
+    // Enhanced shouldBlockQuery with better debugging
+    const shouldBlockQuery = async (query) => {
+        if (!query) return false;
 
-        // console.log('YouTube handler activated');
+        const trimmed = query.trim();
+        if (trimmed.length === 0) return false;
 
-        // Function to get YouTube search query
-        const getYouTubeQuery = () => {
-            // Check URL parameters for search query
-            const urlParams = new URLSearchParams(window.location.search);
-            const searchQuery = urlParams.get('search_query') || urlParams.get('q');
+        console.log(`\n=== ANALYZING QUERY: "${trimmed}" ===`);
 
-            if (searchQuery) return decodeURIComponent(searchQuery);
-
-            // Also check the search input field
-            const searchInput = document.querySelector('input#search') ||
-                  document.querySelector('input[name="search_query"]') ||
-                  document.querySelector('#search-input input') ||
-                  document.querySelector('ytd-searchbox input');
-
-            return searchInput?.value || '';
-        };
-
-        // Function to redirect to YouTube home
-        const redirectToYouTubeHome = () => {
-            // console.log('Redirecting to YouTube home');
-            window.location.href = 'https://www.youtube.com/';
-        };
-
-        // Check current search query in URL immediately
-        const checkCurrentQuery = () => {
-            const currentQuery = getYouTubeQuery();
-            // console.log('Current YouTube query:', currentQuery);
-            if (currentQuery && shouldBlockQuery(currentQuery)) {
-                redirectToYouTubeHome();
-                return true;
-            }
-            return false;
-        };
-
-        // Monitor search input for real-time checking
-        const monitorSearchInput = () => {
-            // Multiple selectors to catch different YouTube layouts
-            const selectors = [
-                'input#search',
-                'input[name="search_query"]',
-                '#search-input input',
-                'ytd-searchbox input',
-                '#searchbox input',
-                '.ytd-searchbox input'
-            ];
-
-            let searchInput = null;
-            for (const selector of selectors) {
-                searchInput = document.querySelector(selector);
-                if (searchInput) break;
-            }
-
-            if (searchInput && !searchInput.hasAttribute('data-filter-monitored')) {
-                // console.log('Found search input, adding monitors');
-                searchInput.setAttribute('data-filter-monitored', 'true');
-
-                // Check on form submission
-                const searchForm = searchInput.closest('form');
-                if (searchForm) {
-                    searchForm.addEventListener('submit', (e) => {
-                        const query = searchInput.value;
-                        // console.log('Form submit with query:', query);
-                        if (shouldBlockQuery(query)) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            redirectToYouTubeHome();
-                        }
-                    });
-                }
-
-                // Also check on Enter key press
-                searchInput.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter') {
-                        const query = searchInput.value;
-                        // console.log('Enter key with query:', query);
-                        if (shouldBlockQuery(query)) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            redirectToYouTubeHome();
-                        }
-                    }
-                });
-
-                // Check on input change (real-time)
-                searchInput.addEventListener('input', (e) => {
-                    const query = searchInput.value;
-                    if (query.length > 3 && shouldBlockQuery(query)) {
-                        // console.log('Input change blocked:', query);
-                        redirectToYouTubeHome();
-                    }
-                });
-            }
-        };
-
-        // Initial checks
-        if (checkCurrentQuery()) return;
-
-        // Wait for page to load and then monitor
-        const waitForElements = () => {
-            monitorSearchInput();
-
-            // Continue checking for new elements
-            setTimeout(waitForElements, 1000);
-        };
-
-        // Start monitoring after a brief delay
-        setTimeout(waitForElements, 500);
-
-        // Also monitor URL changes for YouTube's SPA navigation
-        let lastUrl = window.location.href;
-        const checkUrlChange = () => {
-            if (window.location.href !== lastUrl) {
-                lastUrl = window.location.href;
-                // console.log('URL changed:', lastUrl);
-                setTimeout(() => {
-                    if (checkCurrentQuery()) return;
-                    monitorSearchInput();
-                }, 100);
-            }
-        };
-
-        setInterval(checkUrlChange, 500);
-
-        // Re-check when YouTube's SPA navigation occurs
-        const observer = new MutationObserver(() => {
-            monitorSearchInput();
-        });
-
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-    };
-
-    // --- REGULAR SEARCH ENGINE HANDLING ---
-    const handleRegularSearchEngines = () => {
-        const query = new URLSearchParams(window.location.search).get("q");
-
-        if (shouldBlockQuery(query)) {
-            blockPage();
-            return;
+        const cacheKey = 'query_' + trimmed.substring(0, 30);
+        const cached = cache.get(cacheKey);
+        if (cached !== null) {
+            console.log(`Query cache result: ${cached ? 'BLOCKED' : 'ALLOWED'}`);
+            console.log(`Final result: ${cached ? 'BLOCKED' : 'ALLOWED'}`);
+            console.log('=== ANALYSIS COMPLETE ===\n');
+            return cached;
         }
 
-        // Content filtering for regular search engines
-        const isBlockedText = text => {
-            if (!text) return false;
-            return countMultiRedFlags(text) >= 2 || hasRedCombo(text)
-        };
+        console.log('No cache found, checking profanity...');
+        const blocked = await containsProfanity(trimmed);
+        console.log(`containsProfanity returned: ${blocked}`);
 
-        const isBlockedSite = text => blockedSites.some(site => text.toLowerCase().includes(site));
+        cache.set(cacheKey, blocked);
 
-        const filterImages = (root = document) => {
-            const images = root.querySelectorAll('img');
-            images.forEach(img => {
-                const alt = img.alt || '';
-                const src = img.src || '';
-                const container = img.closest('a')?.parentElement?.innerText || '';
+        console.log(`Final result: ${blocked ? 'BLOCKED' : 'ALLOWED'}`);
+        console.log('=== ANALYSIS COMPLETE ===\n');
 
-                if (isBlockedText(alt) || isBlockedText(src) || isBlockedText(container) || isBlockedSite(container)) {
-                    const box = img.closest('div');
-                    if (box) box.style.display = 'none';
-                }
-            });
-        };
-
-        const filterLinks = (root = document) => {
-            const anchors = root.querySelectorAll('a');
-            anchors.forEach(link => {
-                const href = link.href || '';
-                const text = link.innerText || '';
-
-                if (isBlockedSite(href) || isBlockedSite(text) || isBlockedText(text)) {
-                    const parent = link.closest('div');
-                    if (parent) parent.style.display = 'none';
-                }
-            });
-        };
-
-        const filterAll = (root = document) => {
-            filterImages(root);
-            filterLinks(root);
-        };
-
-        // Initial run
-        filterAll();
-
-        // Observe dynamic content
-        const observer = new MutationObserver(mutations => {
-            for (const mutation of mutations) {
-                mutation.addedNodes.forEach(node => {
-                    if (node.nodeType === 1) filterAll(node);
-                });
-            }
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
+        return blocked;
     };
 
+    // --- BLOCK PAGE WITH ENHANCED STATS ---
     const blockPage = () => {
         document.documentElement.innerHTML = "";
-        document.title = "Blocked for Focus";
+        document.title = "Content Blocked - Progressive Filter";
 
         const savedTheme = localStorage.getItem("theme") || "dark";
         const theme = savedTheme === "light" ? "light" : "dark";
@@ -352,145 +456,128 @@
             body {
                 margin: 0;
                 padding: 0;
-                font-family: 'Segoe UI', sans-serif;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
                 justify-content: center;
-                height: 100vh;
+                min-height: 100vh;
                 text-align: center;
-                transition: background 0.3s, color 0.3s;
+                transition: all 0.3s ease;
+                position: relative;
+                overflow-x: hidden;
             }
             body.dark {
-                background: #2b2d31;
+                background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
                 color: #f2f3f5;
             }
             body.light {
-                background: #f4f4f4;
-                color: #1e1e1e;
+                background: linear-gradient(135deg, #f5f7fa, #c3cfe2, #e0eafc);
+                color: #2c3e50;
+            }
+            .container {
+                max-width: 700px;
+                padding: 2rem;
+                backdrop-filter: blur(10px);
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 20px;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            }
+            body.light .container {
+                background: rgba(255, 255, 255, 0.8);
+                border: 1px solid rgba(0, 0, 0, 0.1);
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
             }
             h1 {
                 font-size: 3rem;
                 margin-bottom: 1rem;
+                background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
             }
-            p {
-                font-size: 1.2rem;
+            .subtitle {
+                font-size: 1.1rem;
                 opacity: 0.8;
+                margin-bottom: 2rem;
+                line-height: 1.6;
+            }
+            .stats {
+                background: rgba(255, 255, 255, 0.1);
+                padding: 1.5rem;
+                border-radius: 10px;
+                margin: 1rem 0;
+                font-size: 0.9rem;
+                text-align: left;
+            }
+            body.light .stats {
+                background: rgba(0, 0, 0, 0.05);
             }
             .buttons {
                 margin-top: 2rem;
                 display: flex;
                 gap: 1rem;
                 flex-wrap: wrap;
+                justify-content: center;
             }
             button {
-                padding: 10px 20px;
-                background: #5865f2;
+                padding: 12px 24px;
+                background: linear-gradient(45deg, #667eea, #764ba2);
                 border: none;
-                border-radius: 6px;
+                border-radius: 50px;
                 color: white;
                 cursor: pointer;
                 font-size: 1rem;
-                transition: background 0.2s;
+                font-weight: 600;
+                transition: all 0.3s ease;
+                box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
             }
             button:hover {
-                background: #4752c4;
-            }
-            body.light button {
-                background: #1e1e1e;
-                color: #fff;
-            }
-            body.light button:hover {
-                background: #444;
-            }
-            .search-container {
-                margin-top: 2rem;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                gap: 1rem;
-                width: 100%;
-                max-width: 500px;
-            }
-            .search-box {
-                display: flex;
-                gap: 0.5rem;
-                width: 100%;
-            }
-            #customSearch {
-                flex: 1;
-                padding: 12px 16px;
-                border: 2px solid #5865f2;
-                border-radius: 6px;
-                font-size: 1rem;
-                outline: none;
-                transition: border-color 0.2s;
-            }
-            body.dark #customSearch {
-                background: #40444b;
-                color: #f2f3f5;
-                border-color: #5865f2;
-            }
-            body.light #customSearch {
-                background: white;
-                color: #1e1e1e;
-                border-color: #1e1e1e;
-            }
-            #customSearch:focus {
-                border-color: #4752c4;
-            }
-            body.light #customSearch:focus {
-                border-color: #444;
-            }
-            #searchBtn {
-                padding: 12px 20px;
-                background: #5865f2;
-                border: none;
-                border-radius: 6px;
-                color: white;
-                cursor: pointer;
-                font-size: 1rem;
-                transition: background 0.2s;
-            }
-            #searchBtn:hover {
-                background: #4752c4;
-            }
-            body.light #searchBtn {
-                background: #1e1e1e;
-                color: #fff;
-            }
-            body.light #searchBtn:hover {
-                background: #444;
-            }
-            .search-hint {
-                font-size: 0.9rem;
-                opacity: 0.6;
-                margin-top: 0.5rem;
+                transform: translateY(-2px);
+                box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
             }
         `;
         document.head.appendChild(style);
         document.body.className = theme;
 
-        const title = document.createElement("h1");
-        title.textContent = "⛔ Blocked";
+        const container = document.createElement("div");
+        container.className = "container";
 
-        const msg = document.createElement("p");
-        msg.textContent = "This search was blocked to help protect your focus and productivity.";
+        const title = document.createElement("h1");
+        title.textContent = "🛡️ Content Blocked";
+
+        const subtitle = document.createElement("p");
+        subtitle.className = "subtitle";
+        subtitle.textContent = "Progressive content filtering detected inappropriate search content. The system checked critical words first, then searched through profanity databases progressively.";
+
+        // Enhanced filter statistics
+        const stats = profanityDB.getStats();
+        const statsDiv = document.createElement("div");
+        statsDiv.className = "stats";
+        statsDiv.innerHTML = `
+            <strong>🔍 Progressive Filter Statistics:</strong><br><br>
+            <strong>Phase 1 (Instant):</strong><br>
+            • Critical words: ${stats.criticalWords} patterns<br>
+            • Fast regex patterns: ${filterConfig.fastPatterns.length} rules<br><br>
+            <strong>Phase 2 (Progressive):</strong><br>
+            • Sources loaded: ${stats.loadedSources}/${stats.totalSources}<br>
+            • Total words in database: ${stats.totalLoadedWords.toLocaleString()}<br>
+            • Cache entries: ${cache.data.size}<br><br>
+            <strong>Status:</strong> Query blocked during progressive search
+        `;
 
         const buttonContainer = document.createElement("div");
         buttonContainer.className = "buttons";
 
         const backBtn = document.createElement("button");
-        backBtn.textContent = "🔙 Back to Search";
-        backBtn.onclick = () => {
-            window.location.href = window.location.origin;
-        };
+        backBtn.textContent = "🔙 Return to Search";
+        backBtn.onclick = () => window.location.href = window.location.origin;
 
         const toggleBtn = document.createElement("button");
         toggleBtn.textContent = "🌓 Toggle Theme";
         toggleBtn.onclick = () => {
-            const isDark = document.body.classList.contains("dark");
-            const newTheme = isDark ? "light" : "dark";
+            const newTheme = document.body.classList.contains("dark") ? "light" : "dark";
             document.body.className = newTheme;
             localStorage.setItem("theme", newTheme);
         };
@@ -498,77 +585,160 @@
         buttonContainer.appendChild(backBtn);
         buttonContainer.appendChild(toggleBtn);
 
-        // Create search container
-        const searchContainer = document.createElement("div");
-        searchContainer.className = "search-container";
+        container.appendChild(title);
+        container.appendChild(subtitle);
+        container.appendChild(statsDiv);
+        container.appendChild(buttonContainer);
+        document.body.appendChild(container);
+    };
 
-        const searchBox = document.createElement("div");
-        searchBox.className = "search-box";
+    // --- SEARCH ENGINE HANDLERS ---
+    const handleSearchEngine = () => {
+        // Check URL immediately
+        const params = new URLSearchParams(window.location.search);
+        const query = params.get('q') || params.get('query') || params.get('search_query') || '';
 
-        const searchInput = document.createElement("input");
-        searchInput.type = "text";
-        searchInput.id = "customSearch";
-        searchInput.placeholder = "Search for something productive...";
-
-        const searchButton = document.createElement("button");
-        searchButton.id = "searchBtn";
-        searchButton.textContent = "🔍 Search";
-
-        const searchHint = document.createElement("p");
-        searchHint.className = "search-hint";
-        searchHint.textContent = "Try searching for educational content, tutorials, or productive topics";
-
-        // Search functionality
-        const performSearch = () => {
-            const query = searchInput.value.trim();
-            if (query) {
-                // Determine the current site and redirect accordingly
-                const currentHost = window.location.hostname;
-                if (currentHost.includes('youtube.com')) {
-                    window.location.href = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
-                } else if (currentHost.includes('google.com')) {
-                    window.location.href = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-                } else if (currentHost.includes('bing.com')) {
-                    window.location.href = `https://www.bing.com/search?q=${encodeURIComponent(query)}`;
-                } else if (currentHost.includes('duckduckgo.com')) {
-                    window.location.href = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
-                } else {
-                    // Default to Google
-                    window.location.href = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+        if (query) {
+            shouldBlockQuery(query).then(shouldBlock => {
+                if (shouldBlock) {
+                    blockPage();
                 }
-            }
+            });
+        }
+
+        // Monitor input with progressive blocking
+        const monitorInput = (input) => {
+            if (input.hasAttribute('data-monitored')) return;
+            input.setAttribute('data-monitored', 'true');
+
+            let lastValue = '';
+            let currentCheck = null;
+
+            const checkInput = async () => {
+                const currentValue = input.value;
+                if (currentValue !== lastValue && currentValue.length > 2) {
+                    lastValue = currentValue;
+
+                    // Cancel any ongoing check
+                    if (currentCheck) {
+                        currentCheck.cancelled = true;
+                    }
+
+                    // Start new check
+                    currentCheck = { cancelled: false };
+                    const thisCheck = currentCheck;
+
+                    try {
+                        const shouldBlock = await shouldBlockQuery(currentValue);
+
+                        // Only act if this check wasn't cancelled
+                        if (!thisCheck.cancelled && shouldBlock) {
+                            blockPage();
+                        }
+                    } catch (error) {
+                        console.error('Error checking input:', error);
+                    }
+                }
+            };
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    setTimeout(() => checkInput(), 0);
+                }
+            });
+
+            // Reduced throttle for more responsive progressive blocking
+            let throttleTimer = null;
+            input.addEventListener('input', () => {
+                if (throttleTimer) return;
+                throttleTimer = setTimeout(() => {
+                    checkInput();
+                    throttleTimer = null;
+                }, 200); // More responsive
+            });
         };
 
-        searchButton.onclick = performSearch;
-        searchInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                performSearch();
+        // Monitor existing inputs
+        const searchInputs = document.querySelectorAll('input[type="search"], input[name="q"], input[name="query"]');
+        searchInputs.forEach(monitorInput);
+
+        // Monitor form submissions
+        document.addEventListener('submit', async (e) => {
+            const form = e.target;
+            if (form.tagName === 'FORM') {
+                const formData = new FormData(form);
+                const query = formData.get('q') || formData.get('query') || formData.get('search_query') || '';
+                if (query && await shouldBlockQuery(query)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    blockPage();
+                }
+            }
+        }, true);
+
+        // Monitor new inputs
+        const observer = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                if (mutation.type === 'childList') {
+                    const addedNodes = Array.from(mutation.addedNodes);
+                    for (const node of addedNodes) {
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            const inputs = node.querySelectorAll ?
+                                node.querySelectorAll('input[type="search"], input[name="q"], input[name="query"]') : [];
+                            inputs.forEach(monitorInput);
+                        }
+                    }
+                }
             }
         });
 
-        searchBox.appendChild(searchInput);
-        searchBox.appendChild(searchButton);
-        searchContainer.appendChild(searchBox);
-        searchContainer.appendChild(searchHint);
-
-        document.body.appendChild(title);
-        document.body.appendChild(msg);
-        document.body.appendChild(buttonContainer);
-        document.body.appendChild(searchContainer);
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
     };
 
-    // --- MAIN EXECUTION ---
-    // console.log('Script starting on:', window.location.hostname);
+    // --- INITIALIZATION ---
+    const initializeFilter = () => {
+        console.log('Progressive Content Filter starting...');
 
-    if (window.location.hostname.includes('youtube.com')) {
-        // console.log('Initializing YouTube handler');
-        // Wait for DOM to be ready
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', handleYouTube);
-        } else {
-            handleYouTube();
+        // Handle search engines
+        const hostname = window.location.hostname;
+        if (hostname.includes('google.com') || hostname.includes('bing.com') ||
+            hostname.includes('duckduckgo.com') || hostname.includes('search.yahoo.com')) {
+            handleSearchEngine();
         }
-    } else {
-        handleRegularSearchEngines();
+
+        console.log('Progressive Content Filter ready');
+    };
+
+    // Start immediately
+    initializeFilter();
+
+    // Handle DOM loading
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            const hostname = window.location.hostname;
+            if (hostname.includes('google.com') || hostname.includes('bing.com') ||
+                hostname.includes('duckduckgo.com') || hostname.includes('search.yahoo.com')) {
+                handleSearchEngine();
+            }
+        });
     }
+
+    // Export for debugging
+    window.ContentFilter = {
+        shouldBlockQuery,
+        containsProfanity,
+        blockPage,
+        profanityDB,
+        cache,
+        fastNormalize,
+        // Debug functions
+        testProgressive: async (word) => {
+            console.log(`Testing progressive search for: ${word}`);
+            return await profanityDB.searchProgressively(word);
+        }
+    };
+
 })();
