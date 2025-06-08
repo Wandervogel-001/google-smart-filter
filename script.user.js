@@ -36,6 +36,10 @@
         });
     };
 
+    (async () => {
+        filterConfig = await loadFilterConfig();
+    })();
+
     // --- OPTIMIZED CACHE ---
     class FastCache {
         constructor(ttl = filterConfig.cacheTTL, maxSize = filterConfig.maxCacheSize) {
