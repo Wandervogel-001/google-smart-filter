@@ -26,7 +26,7 @@
     
         return new Promise((resolve, reject) => {
             const script = document.createElement('script');
-            script.src = 'https://your-url.github.io/filter-config.js'; // Replace with raw link
+            script.src = 'https://raw.githubusercontent.com/Wandervogel-001/google-smart-filter/refs/heads/main/filter-config.js'; // Replace with raw link
             script.onload = () => {
                 filterConfig = window.filterConfig;
                 resolve(filterConfig);
