@@ -11,7 +11,6 @@
 // @match        *://*.startpage.com/*
 // @match        *://*.qwant.com/*
 // @match        *://*.youtube.com/*
-
 // @grant        none
 // ==/UserScript==
 
@@ -19,26 +18,35 @@
     'use strict';
 
     // --- FAST CONFIGURATION ---
-    let filterConfig = null;
+    const filterConfig = {
+        // Precompiled high-priority words for instant blocking
+        criticalWords: new Set([
+            'sex', 'porn', 'nude', 'naked', 'fuck', 'shit', 'ass', 'bitch',
+            'cock', 'dick', 'pussy', 'vagina', 'boobs', 'tits', 'cum', 'orgasm',
+            'masturbat', 'xxx', 'adult', '18+', 'nsfw', 'r18', 'hentai', 'milf',
+            'onlyfans', 'hooker', 'escort', 'slut', 'whore', 'penis', 'anal',
+            'oral', 'blow', 'handjob', 'fetish', 'kink', 'bondage', 'dildo',
+            'vibrator', 'threesome', 'gangbang', 'creampie', 'gay',
+            'lesbian', 'homo', 'butt',
+        ]),
 
-    const loadFilterConfig = async () => {
-        if (filterConfig) return filterConfig;
-    
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = 'https://raw.githubusercontent.com/Wandervogel-001/google-smart-filter/refs/heads/main/filter-config.js'; // Replace with raw link
-            script.onload = () => {
-                filterConfig = window.filterConfig;
-                resolve(filterConfig);
-            };
-            script.onerror = reject;
-            document.head.appendChild(script);
-        });
+        // Fast regex patterns for immediate detection
+        fastPatterns: [
+            /\b(sex|porn|nude|naked|fuck|shit|ass|bitch|cock|dick|pussy|vagina|boobs|tits|cum|orgasm|masturbat)\w*\b/i,
+            /\b(xxx|adult|18\+|nsfw|r18|hentai|milf|onlyfans)\b/i,
+            /(hot|sexy|nude|naked|porn|adult|yoga)\s*(jean|pant|girl|boy|woman|man|body|pic|photo|image|video|content)/i,
+            /\b(breasts?|butt|ass|thighs?|boobs?|tits?)\b.*\b(pic|photo|image|video|show|exposed?)\b/i
+        ],
+
+        // Ordered profanity lists - will be searched in this order
+        profanityApiUrls: {
+            vulgarwords: 'https://raw.githubusercontent.com/Wandervogel-001/google-smart-filter/refs/heads/main/filtered_sensible.txt',
+        },
+
+        cacheTTL: 300000, // 5 minutes
+        maxCacheSize: 500,
+        searchTimeout: 2000 // 2 seconds timeout for progressive search
     };
-
-    (async () => {
-        filterConfig = await loadFilterConfig();
-    })();
 
     // --- OPTIMIZED CACHE ---
     class FastCache {
